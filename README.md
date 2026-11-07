@@ -4,8 +4,8 @@
 
 A free, minimal, camera-first iPhone app for reading Chinese text. Point the camera at
 simplified or traditional Chinese, capture a frame, then tap any word to see its
-pinyin (with tone marks) and English meaning. Sentence-level translations are
-shown too — all processed on device.
+pinyin (with tone marks), its English meaning, and a translation of the sentence
+it's in — all processed on device.
 
 ## How it works
 
@@ -38,7 +38,7 @@ ChineseOCR/
 
 ## Build & run
 
-Requires Xcode 16+ and an iPhone running iOS 18+. Xcode must also support the
+Requires an iPhone running iOS 18+. Xcode must also support the
 phone's iOS version: an iPhone on iOS 27 needs Xcode 27 (Xcode 26.x fails with
 "The developer disk image could not be mounted on this device").
 
@@ -64,10 +64,10 @@ Personal Team builds expire after 7 days; just run from Xcode again.
 
 ### Checks
 
+Segmentation, lookup, pinyin, line joining and sentence splitting, using the
+real app code. Run from the repo root:
+
 ```
-# pinyin tone marks (real PinyinFormatter)
-swiftc -o /tmp/pinyin_check ChineseOCR/Dictionary/PinyinFormatter.swift build_tools/pinyin_check/main.swift && /tmp/pinyin_check
-# segmentation, lookup, line joining and sentence splitting (real app code)
 swiftc -O -o /tmp/text_check ChineseOCR/Dictionary/ChineseDictionary.swift ChineseOCR/Dictionary/PinyinFormatter.swift ChineseOCR/OCR/TextLayout.swift build_tools/text_check/main.swift && /tmp/text_check
 ```
 

@@ -1,4 +1,3 @@
-import Foundation
 import AVFoundation
 import UIKit
 
@@ -7,7 +6,7 @@ import UIKit
 @Observable
 final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sendable {
     enum Status {
-        case idle, configuring, running, interrupted, denied, unavailable
+        case idle, running, interrupted, denied, unavailable
     }
 
     let session = AVCaptureSession()
@@ -83,7 +82,6 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, @unchecke
         case .authorized:
             completion(true)
         case .notDetermined:
-            self.setStatus(.configuring)
             AVCaptureDevice.requestAccess(for: .video) { granted in
                 self.sessionQueue.async { completion(granted) }
             }

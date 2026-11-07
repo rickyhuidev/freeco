@@ -3,7 +3,8 @@ import SwiftUI
 /// Centralized, deliberately tiny design system. The product bar is "minimal and
 /// slick", so everything here leans on typography, spacing and a single accent.
 enum Theme {
-    static let accent = Color(red: 1.0, green: 0.78, blue: 0.40)
+    /// Defined once, in the AccentColor asset, which also tints links and buttons.
+    static let accent = Color.accentColor
 
     enum Font {
         /// Large Han character display.

@@ -6,7 +6,7 @@ import AppKit
 #endif
 
 /// A single CC-CEDICT entry.
-struct DictionaryEntry: Identifiable, Hashable {
+struct DictionaryEntry: Identifiable {
     /// Position in the dictionary file, unique per entry.
     let id: Int
     let simplified: String
@@ -21,7 +21,7 @@ struct DictionaryEntry: Identifiable, Hashable {
 }
 
 /// One token of segmented text. `isWord` means a tappable Chinese unit.
-struct TextSegment: Hashable {
+struct TextSegment {
     let text: String
     /// Range within the source line, used to query Vision for a bounding box.
     let range: Range<String.Index>

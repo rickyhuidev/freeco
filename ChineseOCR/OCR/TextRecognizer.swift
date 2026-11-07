@@ -1,13 +1,14 @@
-import Foundation
 import Vision
 import UIKit
 
 /// A recognized, tappable Chinese word positioned on the frozen frame.
-struct OCRWord: Identifiable, Hashable {
+struct OCRWord: Identifiable, Equatable {
     let id = UUID()
     let text: String
     /// Normalized Vision rect (origin bottom-left) in the upright image's space.
     let boundingBox: CGRect
+    /// The sentence this word appears in, for showing its translation.
+    let sentence: SentenceRef?
 }
 
 /// The full result of recognizing one captured frame.
@@ -55,24 +56,30 @@ enum TextRecognizer {
                     return
                 }
 
-                var words: [OCRWord] = []
                 var lines: [RecognizedLine] = []
+                var found: [(text: String, box: CGRect, line: Int, offset: Int)] = []
 
                 for observation in request.results ?? [] {
                     guard let candidate = observation.topCandidates(1).first else { continue }
                     let lineText = candidate.string
+                    let line = lines.count
                     lines.append(RecognizedLine(text: lineText, box: observation.boundingBox))
 
                     for segment in dictionary.segment(lineText) where segment.isWord {
                         let box = (try? candidate.boundingBox(for: segment.range))?.boundingBox
                             ?? estimatedBox(for: segment.range, in: lineText, lineBox: observation.boundingBox)
-                        words.append(OCRWord(text: segment.text, boundingBox: box))
+                        let offset = lineText.distance(from: lineText.startIndex, to: segment.range.lowerBound)
+                        found.append((segment.text, box, line, offset))
                     }
                 }
 
-                let sentences = TextLayout.paragraphs(from: lines, imageAspect: aspect)
-                    .flatMap(TextLayout.sentences(in:))
-                cont.resume(returning: OCRResult(image: display, words: words, sentences: sentences))
+                let map = TextLayout.sentenceMap(from: lines, imageAspect: aspect)
+                let words = found.map { word in
+                    OCRWord(text: word.text, boundingBox: word.box,
+                            sentence: map.sentence(line: word.line, characterOffset: word.offset,
+                                                   length: word.text.count))
+                }
+                cont.resume(returning: OCRResult(image: display, words: words, sentences: map.sentences))
             }
         }
     }

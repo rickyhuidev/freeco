@@ -7,6 +7,7 @@ struct CameraScreen: View {
 
     @State private var showAttribution = false
     @State private var pinchStartZoom: CGFloat?
+    @State private var isPoop = false
 
     var body: some View {
         ZStack {
@@ -27,14 +28,7 @@ struct CameraScreen: View {
             VStack {
                 HStack {
                     Spacer()
-                    Button { showAttribution = true } label: {
-                        Image(systemName: "info")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.7))
-                            .frame(width: 32, height: 32)
-                            .background(.ultraThinMaterial, in: Circle())
-                    }
-                    .accessibilityLabel("About and attributions")
+                    infoButton
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -67,6 +61,36 @@ struct CameraScreen: View {
                 .presentationDetents([.medium, .large])
                 .presentationBackground(.ultraThinMaterial)
         }
+    }
+
+    /// Tap opens the attributions; triple tap toggles the easter egg. Gestures
+    /// instead of a Button, since a Button would fire on the first of three taps.
+    private var infoButton: some View {
+        ZStack {
+            if isPoop {
+                Text("💩")
+                    .font(.system(size: 17))
+                    .transition(.scale.combined(with: .opacity))
+            } else {
+                Image(systemName: "info")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .frame(width: 32, height: 32)
+        .background(.ultraThinMaterial, in: Circle())
+        .contentShape(Circle())
+        .gesture(
+            TapGesture(count: 3)
+                .onEnded { withAnimation(.spring(duration: 0.35, bounce: 0.5)) { isPoop.toggle() } }
+                .exclusively(before: TapGesture().onEnded { showAttribution = true })
+        )
+        .sensoryFeedback(.impact(weight: .medium), trigger: isPoop)
+        .accessibilityElement()
+        .accessibilityLabel("About and attributions")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { showAttribution = true }
     }
 
     @ViewBuilder

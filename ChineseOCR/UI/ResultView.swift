@@ -7,25 +7,50 @@ struct ResultView: View {
     let onDismiss: () -> Void
 
     @State private var selected: OCRWord?
+    /// Keeps the sheet's content in place while it animates away after deselection.
+    @State private var lastSelected: OCRWord?
     @State private var translator = SentenceTranslator()
     @State private var translationConfig: TranslationSession.Configuration?
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// Sheet height as a fraction of the screen; the photo stays usable above it.
+    private let sheetFraction: CGFloat = 0.45
 
     var body: some View {
         GeometryReader { proxy in
-            VStack(spacing: 0) {
-                FrozenFrame(result: result, selected: $selected)
-                    .frame(height: proxy.size.height * 0.58)
+            // The photo runs edge to edge, so measure in full-screen coordinates.
+            let safeArea = proxy.safeAreaInsets
+            let screenHeight = proxy.size.height + safeArea.top + safeArea.bottom
 
-                InfoPanel(
-                    result: result,
-                    dictionary: dictionary,
-                    translator: translator,
-                    selected: $selected
-                )
-                .frame(maxHeight: .infinity)
+            FrozenFrame(
+                result: result,
+                selected: $selected,
+                // Below the close button: 8 pt padding + 36 pt button + 8 pt margin.
+                topInset: safeArea.top + 52,
+                bottomInset: selected == nil ? 0 : screenHeight * sheetFraction
+            )
+            .ignoresSafeArea()
+            .overlay {
+                if !result.hasChinese { noChinese }
             }
         }
         .background(Color.black.ignoresSafeArea())
+        .sheet(isPresented: Binding(
+            get: { selected != nil },
+            set: { if !$0 { selected = nil } }
+        )) {
+            InfoPanel(result: result, dictionary: dictionary, translator: translator,
+                      word: selected ?? lastSelected)
+                .presentationDetents([.fraction(sheetFraction), .large])
+                .presentationBackgroundInteraction(.enabled(upThrough: .fraction(sheetFraction)))
+                .presentationBackground(Color(white: 0.07))
+                .presentationCornerRadius(28)
+                .presentationDragIndicator(.visible)
+                // Sheets sit above RootView's privacy cover, so they need their own.
+                .overlay {
+                    if scenePhase != .active { Color.black.ignoresSafeArea() }
+                }
+        }
         .overlay(alignment: .topLeading) {
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
@@ -39,6 +64,7 @@ struct ResultView: View {
             .accessibilityLabel("Scan again")
         }
         .sensoryFeedback(.selection, trigger: selected)
+        .onChange(of: selected) { if let selected { lastSelected = selected } }
         .translationTask(translationConfig) { session in
             await translator.run(sentences: result.sentences, using: session)
         }
@@ -50,6 +76,20 @@ struct ResultView: View {
             )
         }
     }
+
+    private var noChinese: some View {
+        VStack(spacing: 6) {
+            Text("No Chinese found")
+                .font(.headline)
+            Text("Move closer, steady the phone, and make sure the text is well lit.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .multilineTextAlignment(.center)
+        .padding(20)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(32)
+    }
 }
 
 // MARK: - Frozen frame with tappable words
@@ -60,6 +100,11 @@ struct ResultView: View {
 private struct FrozenFrame: View {
     let result: OCRResult
     @Binding var selected: OCRWord?
+    /// Space at the top taken by the status area and close button.
+    let topInset: CGFloat
+    /// Height of the info panel covering the bottom of the frame (0 when hidden).
+    /// The photo may pan up by this much so words under the panel can be seen.
+    let bottomInset: CGFloat
 
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
@@ -75,12 +120,12 @@ private struct FrozenFrame: View {
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            let fitted = fittedRect(container: size, image: result.image.size)
+            let photo = filledRect(in: size)
 
             ZStack {
                 Image(uiImage: result.image)
                     .resizable()
-                    .scaledToFit()
+                    .scaledToFill()
                     .frame(width: size.width, height: size.height)
                     .opacity(0.72)
                     .scaleEffect(scale)
@@ -89,7 +134,7 @@ private struct FrozenFrame: View {
                 Canvas { context, canvasSize in
                     let bounds = CGRect(origin: .zero, size: canvasSize)
                     for word in result.words {
-                        let rect = screenRect(for: word, fitted: fitted, size: size)
+                        let rect = screenRect(for: word, photo: photo, size: size)
                         guard rect.intersects(bounds) else { continue }
                         draw(word, in: rect, context: &context)
                     }
@@ -99,17 +144,19 @@ private struct FrozenFrame: View {
             .contentShape(Rectangle())
             .gesture(zoomGesture(in: size).simultaneously(with: panGesture(in: size)))
             .onTapGesture { location in
-                guard let word = word(at: location, fitted: fitted, size: size) else { return }
+                let word = word(at: location, photo: photo, size: size)
                 withAnimation(.snappy(duration: 0.22)) {
-                    selected = (selected == word) ? nil : word
+                    // Tapping the selected word again, or empty space, closes the panel.
+                    selected = (word == selected) ? nil : word
                 }
             }
+            .onChange(of: selected) { reveal(selected, photo: photo, size: size) }
             .accessibilityElement(children: .contain)
             .accessibilityChildren {
                 ZStack(alignment: .topLeading) {
                     if voiceOverEnabled {
                         ForEach(result.words) { word in
-                            let rect = screenRect(for: word, fitted: fitted, size: size)
+                            let rect = screenRect(for: word, photo: photo, size: size)
                             Rectangle()
                                 .frame(width: rect.width, height: rect.height)
                                 .position(x: rect.midX, y: rect.midY)
@@ -143,10 +190,10 @@ private struct FrozenFrame: View {
 
     /// Prefers a word whose box contains the point; otherwise the nearest word
     /// whose enlarged tap area does, so tiny words stay easy to hit.
-    private func word(at point: CGPoint, fitted: CGRect, size: CGSize) -> OCRWord? {
+    private func word(at point: CGPoint, photo: CGRect, size: CGSize) -> OCRWord? {
         var nearest: (word: OCRWord, distance: CGFloat)?
         for word in result.words {
-            let rect = screenRect(for: word, fitted: fitted, size: size)
+            let rect = screenRect(for: word, photo: photo, size: size)
             if rect.contains(point) { return word }
             let target = rect.insetBy(dx: min(0, (rect.width - minTapTarget) / 2),
                                       dy: min(0, (rect.height - minTapTarget) / 2))
@@ -158,8 +205,8 @@ private struct FrozenFrame: View {
     }
 
     /// A word's rect on screen after the current zoom (about the center) and pan.
-    private func screenRect(for word: OCRWord, fitted: CGRect, size: CGSize) -> CGRect {
-        let rect = viewRect(for: word.boundingBox, in: fitted)
+    private func screenRect(for word: OCRWord, photo: CGRect, size: CGSize) -> CGRect {
+        let rect = viewRect(for: word.boundingBox, in: photo)
         return CGRect(
             x: size.width / 2 + (rect.minX - size.width / 2) * scale + offset.width,
             y: size.height / 2 + (rect.minY - size.height / 2) * scale + offset.height,
@@ -195,7 +242,7 @@ private struct FrozenFrame: View {
             .onChanged { value in
                 let last = lastPanTranslation ?? .zero
                 lastPanTranslation = value.translation
-                guard scale > 1, pinchStart == nil else { return }
+                guard pinchStart == nil else { return }
                 offset = clamped(
                     CGSize(width: offset.width + value.translation.width - last.width,
                            height: offset.height + value.translation.height - last.height),
@@ -205,19 +252,44 @@ private struct FrozenFrame: View {
             .onEnded { _ in lastPanTranslation = nil }
     }
 
-    /// Keeps the zoomed content covering the frame (no panning past its edges).
+    /// Pans just enough to keep the selected word clear of the panel and the
+    /// close button. With no selection, settles back within the normal bounds.
+    private func reveal(_ word: OCRWord?, photo: CGRect, size: CGSize) {
+        var target = offset
+        if let word {
+            let rect = screenRect(for: word, photo: photo, size: size)
+            let visibleTop = topInset
+            let visibleBottom = size.height - bottomInset - 20
+            if rect.maxY > visibleBottom {
+                target.height += visibleBottom - rect.maxY
+            } else if rect.minY < visibleTop {
+                target.height += visibleTop - rect.minY
+            }
+        }
+        target = clamped(target, in: size)
+        guard target != offset else { return }
+        withAnimation(.snappy(duration: 0.3)) { offset = target }
+    }
+
+    /// Keeps the photo covering the frame (no panning past its edges), plus room
+    /// to lift the bottom of the photo above the info panel. The filled photo
+    /// overflows the screen on one axis, so it can pan there even at 1×.
     private func clamped(_ proposed: CGSize, in size: CGSize) -> CGSize {
-        let maxX = (scale - 1) * size.width / 2
-        let maxY = (scale - 1) * size.height / 2
+        let photo = filledRect(in: size)
+        let maxX = max(0, (photo.width * scale - size.width) / 2)
+        let maxY = max(0, (photo.height * scale - size.height) / 2)
         return CGSize(
             width: min(max(proposed.width, -maxX), maxX),
-            height: min(max(proposed.height, -maxY), maxY)
+            height: min(max(proposed.height, -maxY - bottomInset), maxY)
         )
     }
 
-    private func fittedRect(container: CGSize, image: CGSize) -> CGRect {
+    /// The photo's rect at 1×, scaled to fill `container` and centered, matching
+    /// the camera preview's framing.
+    private func filledRect(in container: CGSize) -> CGRect {
+        let image = result.image.size
         guard image.width > 0, image.height > 0 else { return .zero }
-        let scale = min(container.width / image.width, container.height / image.height)
+        let scale = max(container.width / image.width, container.height / image.height)
         let size = CGSize(width: image.width * scale, height: image.height * scale)
         return CGRect(
             x: (container.width - size.width) / 2,
@@ -228,12 +300,12 @@ private struct FrozenFrame: View {
     }
 
     /// Vision boxes are normalized with a bottom-left origin.
-    private func viewRect(for box: CGRect, in fitted: CGRect) -> CGRect {
+    private func viewRect(for box: CGRect, in photo: CGRect) -> CGRect {
         CGRect(
-            x: fitted.minX + box.minX * fitted.width,
-            y: fitted.minY + (1 - box.maxY) * fitted.height,
-            width: box.width * fitted.width,
-            height: box.height * fitted.height
+            x: photo.minX + box.minX * photo.width,
+            y: photo.minY + (1 - box.maxY) * photo.height,
+            width: box.width * photo.width,
+            height: box.height * photo.height
         )
     }
 }
@@ -244,72 +316,63 @@ private struct InfoPanel: View {
     let result: OCRResult
     let dictionary: ChineseDictionary
     let translator: SentenceTranslator
-    @Binding var selected: OCRWord?
+    let word: OCRWord?
 
     var body: some View {
         ScrollView {
-            Group {
-                if !result.hasChinese {
-                    emptyState
-                } else if let selected {
-                    WordDetail(word: selected.text, entries: dictionary.entries(for: selected.text))
-                        .id(selected.id)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                } else {
-                    SentenceList(sentences: result.sentences, translator: translator)
-                        .transition(.opacity)
+            if let word {
+                VStack(alignment: .leading, spacing: 32) {
+                    WordDetail(word: word.text, entries: dictionary.entries(for: word.text))
+                    if let sentence = word.sentence {
+                        SentenceTranslation(sentence: result.sentences[sentence.index],
+                                            highlight: sentence.range,
+                                            translator: translator)
+                    }
                 }
+                .id(word.id)
+                .transition(.opacity)
+                .padding(.horizontal, 24)
+                .padding(.top, 28)
+                .padding(.bottom, 40)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 40)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollIndicators(.hidden)
-        .background(
-            UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous)
-                .fill(Color(white: 0.07))
-                .ignoresSafeArea(edges: .bottom)
-        )
-    }
-
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("No Chinese found")
-                .font(.title3.weight(.semibold))
-            Text("Move closer, steady the phone, and make sure the text is well lit.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
     }
 }
 
-private struct SentenceList: View {
-    let sentences: [String]
+/// The tapped word's sentence, with the word highlighted, and its translation.
+private struct SentenceTranslation: View {
+    let sentence: String
+    let highlight: Range<Int>
     let translator: SentenceTranslator
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 26) {
-            Text("Tap a word")
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Sentence")
                 .font(.caption.weight(.semibold))
                 .textCase(.uppercase)
                 .tracking(1.2)
                 .foregroundStyle(.tertiary)
-
-            ForEach(Array(sentences.enumerated()), id: \.offset) { _, sentence in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(sentence)
-                        .font(Theme.Font.hanzi(22))
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                    translationLine(for: sentence)
-                }
-            }
+            Text(highlighted)
+                .font(Theme.Font.hanzi(20))
+                .textSelection(.enabled)
+            translationLine
         }
     }
 
+    private var highlighted: AttributedString {
+        var text = AttributedString(sentence)
+        let characters = text.characters
+        guard highlight.lowerBound >= 0, highlight.upperBound <= characters.count else { return text }
+        let lower = characters.index(characters.startIndex, offsetBy: highlight.lowerBound)
+        let upper = characters.index(characters.startIndex, offsetBy: highlight.upperBound)
+        text[lower..<upper].foregroundColor = Theme.accent
+        return text
+    }
+
     @ViewBuilder
-    private func translationLine(for sentence: String) -> some View {
+    private var translationLine: some View {
         if let english = translator.translation(for: sentence) {
             Text(english)
                 .font(.body)
