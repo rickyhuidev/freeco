@@ -1,0 +1,14 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# macOS
+.DS_Store
+
+# Raw dictionary download (only needed to rerun preprocess_cedict.py)
+build_tools/cedict.txt
+build_tools/cedict.txt.gz
