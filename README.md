@@ -1,5 +1,7 @@
 # Freeco
 
+*Pleco, but free xD*
+
 A free, minimal, camera-first iPhone app for reading Chinese text. Point the camera at
 simplified or traditional Chinese, capture a frame, then tap any word to see its
 pinyin (with tone marks) and English meaning. Sentence-level translations are
