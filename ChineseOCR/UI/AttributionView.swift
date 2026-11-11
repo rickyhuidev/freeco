@@ -5,9 +5,6 @@ struct AttributionView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Freeco")
-                    .font(.title2.weight(.semibold))
-
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Dictionary")
                         .font(.caption.weight(.semibold))
