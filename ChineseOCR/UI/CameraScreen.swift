@@ -5,9 +5,8 @@ struct CameraScreen: View {
     let isProcessing: Bool
     let onCapture: () -> Void
 
-    @State private var showAttribution = false
+    @State private var showMenu = false
     @State private var pinchStartZoom: CGFloat?
-    @State private var isPoop = false
 
     var body: some View {
         ZStack {
@@ -26,12 +25,10 @@ struct CameraScreen: View {
             statusMessage
 
             VStack {
-                HStack {
-                    Spacer()
-                    infoButton
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
+                menuButton
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 2)
 
                 Spacer()
 
@@ -55,42 +52,29 @@ struct CameraScreen: View {
                     .opacity(camera.status == .running ? 1 : 0.3)
                     .padding(.bottom, 28)
             }
-        }
-        .sheet(isPresented: $showAttribution) {
-            AttributionView()
-                .presentationDetents([.medium, .large])
-                .presentationBackground(.ultraThinMaterial)
+
+            if showMenu {
+                MenuView { setMenu(open: false) }
+                    .transition(.move(edge: .leading))
+                    .zIndex(1)
+            }
         }
     }
 
-    /// Tap opens the attributions; triple tap toggles the easter egg. Gestures
-    /// instead of a Button, since a Button would fire on the first of three taps.
-    private var infoButton: some View {
-        ZStack {
-            if isPoop {
-                Text("💩")
-                    .font(.system(size: 17))
-                    .transition(.scale.combined(with: .opacity))
-            } else {
-                Image(systemName: "info")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .transition(.scale.combined(with: .opacity))
-            }
+    private func setMenu(open: Bool) {
+        withAnimation(.smooth(duration: 0.3)) { showMenu = open }
+    }
+
+    private var menuButton: some View {
+        Button { setMenu(open: true) } label: {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.5), radius: 4)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
-        .frame(width: 32, height: 32)
-        .background(.ultraThinMaterial, in: Circle())
-        .contentShape(Circle())
-        .gesture(
-            TapGesture(count: 3)
-                .onEnded { withAnimation(.spring(duration: 0.35, bounce: 0.5)) { isPoop.toggle() } }
-                .exclusively(before: TapGesture().onEnded { showAttribution = true })
-        )
-        .sensoryFeedback(.impact(weight: .medium), trigger: isPoop)
-        .accessibilityElement()
-        .accessibilityLabel("About and attributions")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { showAttribution = true }
+        .accessibilityLabel("Menu")
     }
 
     @ViewBuilder
