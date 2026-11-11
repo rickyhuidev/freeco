@@ -17,6 +17,10 @@ struct WordDetail: View {
                         .font(Theme.Font.hanzi(24))
                         .foregroundStyle(.tertiary)
                 }
+                SpeakButton(text: word, accessibilityLabel: "Pronounce \(word)")
+                    .foregroundStyle(Theme.accent)
+                    // Rests the icon near the characters' baseline.
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 8 }
             }
 
             if entries.isEmpty {
