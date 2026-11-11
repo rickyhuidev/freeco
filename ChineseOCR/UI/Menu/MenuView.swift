@@ -11,6 +11,16 @@ struct MenuView: View {
 
                 List {
                     NavigationLink {
+                        VoiceSettingsView()
+                            .navigationTitle("Voice")
+                    } label: {
+                        Label("Voice", systemImage: "speaker.wave.2")
+                            .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparatorTint(.white.opacity(0.15))
+
+                    NavigationLink {
                         AttributionView()
                             .navigationTitle("Licenses")
                     } label: {

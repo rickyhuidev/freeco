@@ -64,7 +64,11 @@ struct ResultView: View {
             .accessibilityLabel("Scan again")
         }
         .sensoryFeedback(.selection, trigger: selected)
-        .onChange(of: selected) { if let selected { lastSelected = selected } }
+        .onChange(of: selected) {
+            SpeechService.shared.stop()
+            if let selected { lastSelected = selected }
+        }
+        .onDisappear { SpeechService.shared.stop() }
         .translationTask(translationConfig) { session in
             await translator.run(sentences: result.sentences, using: session)
         }
@@ -354,11 +358,39 @@ private struct SentenceTranslation: View {
                 .textCase(.uppercase)
                 .tracking(1.2)
                 .foregroundStyle(.tertiary)
-            Text(highlighted)
-                .font(Theme.Font.hanzi(20))
-                .textSelection(.enabled)
+            sentenceWithSpeaker
             translationLine
         }
+    }
+
+    /// The icon is part of the text so it flows right after the last character; a
+    /// clear button laid over it (positioned from the text layout) handles taps.
+    private var sentenceWithSpeaker: some View {
+        let isPlaying = SpeechService.shared.currentText == sentence
+        let icon = Text(Image(systemName: SpeakButton.symbol(isPlaying: isPlaying)))
+            .font(.system(size: 15))
+            .foregroundStyle(Theme.accent)
+
+        return Text("\(Text(highlighted)) \(icon)")
+            .font(Theme.Font.hanzi(20))
+            .textSelection(.enabled)
+            .overlayPreferenceValue(Text.LayoutKey.self) { layouts in
+                GeometryReader { proxy in
+                    if let anchored = layouts.first, let lastLine = anchored.layout.last {
+                        let origin = proxy[anchored.origin]
+                        let bounds = lastLine.typographicBounds.rect
+                        Button {
+                            SpeechService.shared.toggle(sentence)
+                        } label: {
+                            Color.clear.frame(width: 36, height: 36).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isPlaying ? "Stop" : "Read sentence aloud")
+                        // The icon is the line's last glyph, about 18 pt wide.
+                        .position(x: origin.x + bounds.maxX - 9, y: origin.y + bounds.midY)
+                    }
+                }
+            }
     }
 
     private var highlighted: AttributedString {
